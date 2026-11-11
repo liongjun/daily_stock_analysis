@@ -877,6 +877,48 @@ class TushareFetcher(BaseFetcher):
 
         return None
 
+    def _get_market_stats_by_recent_days(self, start_date: str) -> Optional[dict]:
+        """交易日历不可用时的降级路径：按自然日回退，探测最近一个有行情的交易日。
+
+        免费积分账号的 trade_cal 限 1 次/小时，一旦限流，原实现会直接放弃统计，
+        导致大盘涨跌家数、成交额全部缺失。这里改用 daily 按自然日回退探测，
+        绕开对交易日历接口的依赖。
+        """
+        try:
+            probe_day = datetime.strptime(start_date, "%Y%m%d")
+        except (TypeError, ValueError):
+            return None
+
+        for offset in range(0, 8):
+            probe = (probe_day - timedelta(days=offset)).strftime("%Y%m%d")
+            try:
+                df = self._call_api_with_rate_limit("daily", trade_date=probe)
+            except Exception as probe_err:
+                logger.warning(f"[Tushare] 交易日历不可用，{probe} 探测失败: {probe_err}")
+                continue
+            if df is None or df.empty:
+                continue
+
+            df.columns = [col.lower() for col in df.columns]
+            try:
+                df_basic = self._call_api_with_rate_limit("stock_basic", fields='ts_code,name')
+                if df_basic is not None and not df_basic.empty:
+                    df = pd.merge(df, df_basic, on='ts_code', how='left')
+                else:
+                    df['name'] = df['ts_code']
+            except Exception as basic_err:
+                logger.warning(f"[Tushare] stock_basic 获取失败，降级为使用代码代替名称: {basic_err}")
+                df['name'] = df['ts_code']
+
+            if 'amount' in df.columns:
+                df['amount'] = df['amount'] * 1000
+
+            logger.info(f"[Tushare] 已降级使用 {probe} 全市场行情计算大盘统计（绕开 trade_cal 限流）")
+            return self._calc_market_stats(df)
+
+        logger.warning("[Tushare] 降级路径回退 8 个自然日仍未取到全市场行情")
+        return None
+
     def get_market_stats(self) -> Optional[dict]:
         """
         获取市场涨跌统计 (Tushare Pro)
@@ -896,7 +938,9 @@ class TushareFetcher(BaseFetcher):
 
             trade_dates = self._get_trade_dates(current_date)
             if not trade_dates:
-                return None
+                # 免费账号 trade_cal 限 1 次/小时，超限时不能直接放弃：
+                # 改为按自然日回退探测最近的交易日，保证大盘统计仍可产出。
+                return self._get_market_stats_by_recent_days(current_date)
 
             if current_date in trade_dates:
                 if current_clock < '09:30' or current_clock > '16:30':
