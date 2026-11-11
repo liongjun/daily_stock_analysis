@@ -936,7 +936,12 @@ class TushareFetcher(BaseFetcher):
             current_clock = china_now.strftime("%H:%M")
             current_date = china_now.strftime("%Y%m%d")
 
-            trade_dates = self._get_trade_dates(current_date)
+            try:
+                trade_dates = self._get_trade_dates(current_date)
+            except Exception as cal_err:
+                # trade_cal 限流时抛的是异常而非空结果，必须在此拦截后走降级路径
+                logger.warning(f"[Tushare] 交易日历不可用，改用自然日回退路径: {cal_err}")
+                trade_dates = []
             if not trade_dates:
                 # 免费账号 trade_cal 限 1 次/小时，超限时不能直接放弃：
                 # 改为按自然日回退探测最近的交易日，保证大盘统计仍可产出。
