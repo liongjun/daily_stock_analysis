@@ -930,12 +930,19 @@ class TushareFetcher(BaseFetcher):
                     return None
 
                 try:
-                    df = self._call_api_with_rate_limit(
-                        "daily",
-                        ts_code='3*.SZ,6*.SH,0*.SZ,92*.BJ',
-                        start_date=last_date,
-                        end_date=last_date,
-                    )
+                    # 低积分账号（120 分）不支持 ts_code 通配符模糊匹配，会静默返回 0 行，
+                    # 导致大盘涨跌家数、成交额全部丢失。因此优先按 trade_date 拉取全市场当日行情，
+                    # 为空时再回退到通配符写法（兼容高积分账号）。
+                    df = self._call_api_with_rate_limit("daily", trade_date=last_date)
+                    if df is None or df.empty:
+                        df = self._call_api_with_rate_limit(
+                            "daily",
+                            ts_code='3*.SZ,6*.SH,0*.SZ,92*.BJ',
+                            start_date=last_date,
+                            end_date=last_date,
+                        )
+                    if df is None:
+                        return None
                     # 为防止不同接口返回的列名大小写不一致（例如 rt_k 返回小写，daily 返回大写），统一将列名转为小写
                     df.columns = [col.lower() for col in df.columns]
 
