@@ -946,9 +946,19 @@ class TushareFetcher(BaseFetcher):
                     # 为防止不同接口返回的列名大小写不一致（例如 rt_k 返回小写，daily 返回大写），统一将列名转为小写
                     df.columns = [col.lower() for col in df.columns]
 
-                    # 获取股票基础信息（包含代码和名称）
-                    df_basic = self._call_api_with_rate_limit("stock_basic", fields='ts_code,name')
-                    df = pd.merge(df, df_basic, on='ts_code', how='left')
+                    # 获取股票基础信息（包含代码和名称）。
+                    # 免费账号 stock_basic 限 1 次/小时，一旦限流会让整段统计作废，
+                    # 因此失败时降级为用代码充当名称，保证涨跌家数与成交额仍可输出
+                    # （仅 ST 股的涨跌停判断精度下降，不影响主要指标）。
+                    try:
+                        df_basic = self._call_api_with_rate_limit("stock_basic", fields='ts_code,name')
+                        if df_basic is not None and not df_basic.empty:
+                            df = pd.merge(df, df_basic, on='ts_code', how='left')
+                        else:
+                            df['name'] = df['ts_code']
+                    except Exception as basic_err:
+                        logger.warning(f"[Tushare] stock_basic 获取失败，降级为使用代码代替名称: {basic_err}")
+                        df['name'] = df['ts_code']
                     # 将 daily的 amount 列的值乘以 1000 来和其他数据源保持一致
                     if 'amount' in df.columns:
                         df['amount'] = df['amount'] * 1000
