@@ -41,6 +41,13 @@ concurrency:
 jobs:
   analyze:
     runs-on: ubuntu-latest
+    env:
+      # GitHub Actions runner 默认使用 UTC。报告中的「生成时间」「报告日期」
+      # 均取自 datetime.now()，不设置时区会出现「晚上收到的邮件写着 12:38」
+      # 这类错位。显式声明为北京时间，与报告其余内容保持一致。
+      # 不影响数据取数：src/core/trading_calendar.py 的 get_market_now()
+      # 显式使用 MARKET_TIMEZONE（A 股为 Asia/Shanghai），与系统时区无关。
+      TZ: Asia/Shanghai
     # 兼容误将 STOCK_LIST 配到同名 Environment variables 的场景；
     # 推荐位置仍是 Settings -> Secrets and variables -> Actions -> Repository variables。
     environment: STOCK_LIST
