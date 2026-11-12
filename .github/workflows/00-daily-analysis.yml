@@ -335,9 +335,12 @@ jobs:
           ANSPIRE_LLM_ENABLED: ${{ vars.ANSPIRE_LLM_ENABLED || secrets.ANSPIRE_LLM_ENABLED }}
           BOCHA_API_KEYS: ${{ secrets.BOCHA_API_KEYS }}
           TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
-          # 新闻时间窗口（天）。业绩预告/快报属低频事件，窗口过窄会让
-          # earnings_outlook 长期为空，7 天为折中值。
+          # 新闻时间窗口。effective_window = min(NEWS_MAX_AGE_DAYS, 档位天数)
+          # 档位：ultra_short=1 short=3 medium=7 long=30
+          # 用 medium 让最新消息窗口放到 7 天，减少「过滤后 0 条」的情况；
+          # 业绩预期另有独立的 180 天窗口，不受此项影响。
           NEWS_MAX_AGE_DAYS: ${{ vars.NEWS_MAX_AGE_DAYS || secrets.NEWS_MAX_AGE_DAYS || '7' }}
+          NEWS_STRATEGY_PROFILE: ${{ vars.NEWS_STRATEGY_PROFILE || secrets.NEWS_STRATEGY_PROFILE || 'medium' }}
           SERPAPI_API_KEYS: ${{ secrets.SERPAPI_API_KEYS }}
           MINIMAX_API_KEYS: ${{ secrets.MINIMAX_API_KEYS }}
           BRAVE_API_KEYS: ${{ secrets.BRAVE_API_KEYS }}
