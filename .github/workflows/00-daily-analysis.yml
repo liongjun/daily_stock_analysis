@@ -1,11 +1,14 @@
 name: 每日股票分析
 
 on:
-  # 定时触发 - 每天北京时间 18:17 (UTC 10:17)
-  # 注意：不要用整点 :00。本仓库有 5.6 万 fork，绝大多数都用 0 10 * * 1-5，
-  # GitHub 调度器在整点严重拥堵，实测会出现不触发或延迟数小时。
+  # 定时触发 - 每天北京时间 00:07 (UTC 16:07，前一 UTC 日)
+  # 换算：UTC 周一到周五 16:07 = 北京时间 周二到周六 00:07
+  # 不用 UTC 10:xx：实测该时段为 GitHub 调度高峰，schedule 事件会被直接丢弃
+  # （本仓库 5.6 万 fork，绝大多数沿用上游的 0 10 * * 1-5）。
+  # 凌晨运行必须配合 TRADING_DAY_CHECK_ENABLED=false，否则周六凌晨会被
+  # 判定为非交易日而跳过，导致周五收盘的报告永远丢失。
   schedule:
-    - cron: '17 10 * * 1-5'    # 周一到周五，UTC 10:17 = 北京时间 18:17
+    - cron: '7 16 * * 1-5'    # UTC 周一~周五 16:07 = 北京时间 周二~周六 00:07
   
   # 手动触发
   workflow_dispatch:
@@ -327,6 +330,9 @@ jobs:
           ANSPIRE_LLM_ENABLED: ${{ vars.ANSPIRE_LLM_ENABLED || secrets.ANSPIRE_LLM_ENABLED }}
           BOCHA_API_KEYS: ${{ secrets.BOCHA_API_KEYS }}
           TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
+          # 新闻时间窗口（天）。业绩预告/快报属低频事件，窗口过窄会让
+          # earnings_outlook 长期为空，7 天为折中值。
+          NEWS_MAX_AGE_DAYS: ${{ vars.NEWS_MAX_AGE_DAYS || secrets.NEWS_MAX_AGE_DAYS || '7' }}
           SERPAPI_API_KEYS: ${{ secrets.SERPAPI_API_KEYS }}
           MINIMAX_API_KEYS: ${{ secrets.MINIMAX_API_KEYS }}
           BRAVE_API_KEYS: ${{ secrets.BRAVE_API_KEYS }}
