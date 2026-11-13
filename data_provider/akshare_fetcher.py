@@ -2243,7 +2243,7 @@ class AkshareFetcher(BaseFetcher):
             return None
 
     def get_concept_rankings(self, n: int = 5) -> Optional[Tuple[List[Dict], List[Dict]]]:
-        """获取概念/题材涨跌榜。"""
+        """获取概念/题材涨跌榜。东财不可用时回退新浪概念板块接口。"""
         import akshare as ak
 
         try:
@@ -2253,12 +2253,12 @@ class AkshareFetcher(BaseFetcher):
             logger.info("[API调用] ak.stock_board_concept_name_em() 获取概念排行...")
             df = ak.stock_board_concept_name_em()
             if df is None or df.empty:
-                return None
+                raise ValueError("东财概念板块返回空数据")
 
             change_col = '涨跌幅'
             name_col = '板块名称'
             if change_col not in df.columns or name_col not in df.columns:
-                return None
+                raise ValueError("东财概念板块缺少涨跌幅/板块名称列")
 
             df = df.copy()
             df[change_col] = pd.to_numeric(df[change_col], errors='coerce')
@@ -2276,7 +2276,56 @@ class AkshareFetcher(BaseFetcher):
                 ],
             )
         except Exception as e:
-            logger.warning(f"[Akshare] 获取概念排行失败: {e}")
+            logger.warning(f"[Akshare] 东财概念排行失败: {e}，回退新浪概念板块接口")
+
+        return self._get_concept_rankings_sina(n)
+
+    def _get_concept_rankings_sina(self, n: int = 5) -> Optional[Tuple[List[Dict], List[Dict]]]:
+        """新浪概念板块涨跌榜（东财海外节点 502 时的兜底）。
+
+        接口返回 GBK 编码的 JS 变量，每条记录为逗号分隔字符串：
+        code,name,成分家数,均价,涨跌额,涨跌幅,成交量,成交额,领涨股...
+        """
+        import json
+
+        url = "https://money.finance.sina.com.cn/q/view/newFLJK.php?param=class"
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+            logger.info("[API调用] 新浪概念板块接口 获取概念排行...")
+            resp = requests.get(url, timeout=20)
+            resp.raise_for_status()
+            text = resp.content.decode("gbk", errors="ignore")
+            begin = text.find("{")
+            finish = text.rfind("}")
+            if begin < 0 or finish <= begin:
+                logger.warning("[Akshare] 新浪概念排行返回格式异常")
+                return None
+
+            payload = json.loads(text[begin:finish + 1])
+            rows: List[Dict[str, Any]] = []
+            for raw in payload.values():
+                parts = str(raw).split(",")
+                if len(parts) < 6:
+                    continue
+                name = parts[1].strip()
+                if not name:
+                    continue
+                try:
+                    pct = float(parts[5])
+                except (TypeError, ValueError):
+                    continue
+                rows.append({'name': name, 'change_pct': pct})
+
+            if not rows:
+                logger.warning("[Akshare] 新浪概念排行解析结果为空")
+                return None
+
+            rows.sort(key=lambda item: item['change_pct'], reverse=True)
+            logger.info(f"[Akshare] 新浪概念排行成功，共 {len(rows)} 个概念")
+            return rows[:n], list(reversed(rows[-n:]))
+        except Exception as e:
+            logger.error(f"[Akshare] 新浪接口获取概念排行也失败: {e}")
             return None
 
     def get_hot_stocks(self, n: int = 10) -> Optional[List[Dict[str, Any]]]:
