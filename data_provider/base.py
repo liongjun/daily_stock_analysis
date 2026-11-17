@@ -3317,30 +3317,52 @@ class DataFetcherManager:
         return result
 
     def get_main_indices(self, region: str = "cn") -> List[Dict[str, Any]]:
-        """获取主要指数实时行情（自动切换数据源）"""
+        """获取主要指数实时行情（自动切换数据源）
+
+        A 股主要指数共 6 个：上证指数、深证成指、创业板指、科创50、上证50、沪深300。
+        部分数据源只能返回其中 1 个（例如 Tushare 免费积分下 index_daily 仅上证可用），
+        旧逻辑拿到非空结果就立即返回，导致报告"指数结构"只剩上证指数。
+        现改为：A 股至少覆盖 min_index_count 个才算成功，否则继续尝试下一个数据源；
+        同时保留覆盖最多的一组作为兜底，避免越试越少。
+        """
+        min_index_count = 3
+
         if region == "cn":
             tickflow_fetcher = self._get_tickflow_fetcher()
             if tickflow_fetcher is not None:
                 try:
                     data = tickflow_fetcher.get_main_indices(region=region)
                     if data:
-                        logger.info("[TickFlowFetcher] 获取指数行情成功")
+                        logger.info(f"[TickFlowFetcher] 获取指数行情成功 count={len(data)}")
                         return data
                 except Exception as e:
                     logger.warning(f"[TickFlowFetcher] 获取指数行情失败: {e}")
 
+        partial: List[Dict[str, Any]] = []
         for fetcher in self._fetchers:
             if region == "cn" and fetcher.name == "TickFlowFetcher":
                 continue
             try:
                 data = fetcher.get_main_indices(region=region)
                 if data:
-                    logger.info(f"[{fetcher.name}] 获取指数行情成功")
-                    return data
+                    if region != "cn" or len(data) >= min_index_count:
+                        logger.info(f"[{fetcher.name}] 获取指数行情成功 count={len(data)}")
+                        return data
+                    logger.warning(
+                        f"[{fetcher.name}] 仅返回 {len(data)} 个指数"
+                        f"（不足 {min_index_count} 个），继续尝试其他数据源"
+                    )
+                    if len(data) > len(partial):
+                        partial = data
+                    continue
             except Exception as e:
                 logger.warning(f"[{fetcher.name}] 获取指数行情失败: {e}")
                 continue
-        return []
+        if partial:
+            logger.warning(
+                f"[指数] 所有数据源覆盖不足，使用覆盖最多的一组 count={len(partial)}"
+            )
+        return partial
 
     def get_market_stats(self, *, purpose: str = "unspecified") -> Dict[str, Any]:
         """获取市场涨跌统计（自动切换数据源）"""
