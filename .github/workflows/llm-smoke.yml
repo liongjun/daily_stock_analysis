@@ -81,7 +81,7 @@ jobs:
                   "messages": [
                       {"role": "user", "content": "用一句中文说明：A股收盘后，均线多头排列意味着什么？"}
                   ],
-                  "max_tokens": 200,
+                  "max_tokens": 1024,
                   "temperature": 0.3,
               }
               st, body, el = call("POST", "/chat/completions", payload)
@@ -111,7 +111,7 @@ jobs:
                           '请输出 {"score": 0到100的整数, "stance": "看多或观望或看空", "reason": "30字以内"}',
                       },
                   ],
-                  "max_tokens": 300,
+                  "max_tokens": 2048,
                   "temperature": 0.2,
                   "response_format": {"type": "json_object"},
               }
