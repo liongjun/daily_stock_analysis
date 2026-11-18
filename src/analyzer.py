@@ -110,6 +110,25 @@ from src.market_structure_prompt import format_market_structure_prompt_section
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_LLM_MAX_OUTPUT_TOKENS = 8192
+
+
+def _resolve_llm_max_output_tokens(default: int = DEFAULT_LLM_MAX_OUTPUT_TOKENS) -> int:
+    """Resolve the output token budget for a single LLM call.
+
+    Reasoning models spend most of this budget on their thinking chain, so the
+    8192 default can truncate the JSON body mid-object. ``LLM_MAX_TOKENS`` lets
+    operators raise it without touching code; invalid values fall back safely.
+    """
+    raw = os.getenv('LLM_MAX_TOKENS', '').strip()
+    if not raw:
+        return default
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        logger.warning("Invalid LLM_MAX_TOKENS=%r; falling back to %s", raw, default)
+        return default
+
 
 def _describe_llm_result_model(
     configured_model: str,
@@ -3668,20 +3687,10 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
             name and usage is a dict with prompt_tokens, completion_tokens, total_tokens.
         """
         config = self._get_runtime_config()
-        # Output token budget. Reasoning models (e.g. deepseek-v4-pro) spend most
-        # of it on the thinking chain, so a 8192 default truncates the JSON body
-        # and the response fails validation. Allow overriding via LLM_MAX_TOKENS.
-        _max_tokens_default = 8192
-        try:
-            _max_tokens_env = os.getenv('LLM_MAX_TOKENS', '').strip()
-            if _max_tokens_env:
-                _max_tokens_default = max(1, int(_max_tokens_env))
-        except (TypeError, ValueError):
-            _max_tokens_default = 8192
         max_tokens = (
             generation_config.get('max_output_tokens')
             or generation_config.get('max_tokens')
-            or _max_tokens_default
+            or _resolve_llm_max_output_tokens()
         )
         requested_temperature = generation_config.get('temperature', 0.7)
         requested_timeout = generation_config.get("timeout")
@@ -4226,7 +4235,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
             # 设置生成配置
             generation_config = {
                 "temperature": config.llm_temperature,
-                "max_output_tokens": 8192,
+                "max_output_tokens": _resolve_llm_max_output_tokens(),
             }
 
             logger.info(f"[LLM调用] 开始调用 {model_name}...")
