@@ -13,6 +13,7 @@ A股自选股智能分析系统 - AI分析层
 import json
 import logging
 import math
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -3667,10 +3668,20 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
             name and usage is a dict with prompt_tokens, completion_tokens, total_tokens.
         """
         config = self._get_runtime_config()
+        # Output token budget. Reasoning models (e.g. deepseek-v4-pro) spend most
+        # of it on the thinking chain, so a 8192 default truncates the JSON body
+        # and the response fails validation. Allow overriding via LLM_MAX_TOKENS.
+        _max_tokens_default = 8192
+        try:
+            _max_tokens_env = os.getenv('LLM_MAX_TOKENS', '').strip()
+            if _max_tokens_env:
+                _max_tokens_default = max(1, int(_max_tokens_env))
+        except (TypeError, ValueError):
+            _max_tokens_default = 8192
         max_tokens = (
             generation_config.get('max_output_tokens')
             or generation_config.get('max_tokens')
-            or 8192
+            or _max_tokens_default
         )
         requested_temperature = generation_config.get('temperature', 0.7)
         requested_timeout = generation_config.get("timeout")
