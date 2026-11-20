@@ -293,20 +293,26 @@ def concat_wavs(wav_list):
 
 
 def wav_to_mp3(wav_bytes, out_path):
-    """用 ffmpeg 转 mp3。"""
+    """用 ffmpeg 转 mp3；ffmpeg 不存在或失败返回 False。"""
     tmp_wav = out_path + ".tmp.wav"
-    with open(tmp_wav, "wb") as f:
-        f.write(wav_bytes)
-    r = subprocess.run(
-        ["ffmpeg", "-y", "-i", tmp_wav, "-codec:a", "libmp3lame", "-b:a", "128k", out_path],
-        capture_output=True, text=True,
-    )
-    os.remove(tmp_wav)
-    return r.returncode == 0
+    try:
+        with open(tmp_wav, "wb") as f:
+            f.write(wav_bytes)
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-i", tmp_wav, "-codec:a", "libmp3lame", "-b:a", "128k", out_path],
+            capture_output=True, text=True,
+        )
+        return r.returncode == 0
+    except FileNotFoundError:
+        print("⚠️ 未找到 ffmpeg，将直接输出 wav", flush=True)
+        return False
+    finally:
+        if os.path.exists(tmp_wav):
+            os.remove(tmp_wav)
 
 
 def synth_to_mp3(api_key, voice, speech_text, style, out_path):
-    """把口播稿合成 mp3。"""
+    """把口播稿合成音频，返回实际输出文件路径（mp3 或 wav）。"""
     chunks = split_long(speech_text, 260)
     print(f"📖 口播稿共 {len(speech_text)} 字，切分 {len(chunks)} 段，音色 {voice}", flush=True)
     wavs = []
@@ -315,24 +321,24 @@ def synth_to_mp3(api_key, voice, speech_text, style, out_path):
         wav = synthesize_wav(api_key, voice, c, style)
         if wav is None:
             print(f"❌ 第 {i} 段失败", flush=True)
-            return False
+            return None
         wavs.append(wav)
         if i < len(chunks):
             time.sleep(1.0)
 
     merged = concat_wavs(wavs)
     if merged is None:
-        return False
+        return None
     if wav_to_mp3(merged, out_path):
         size = os.path.getsize(out_path)
         print(f"✅ 语音合成完成: {out_path}（{size/1024:.1f} KB）", flush=True)
-        return True
-    # ffmpeg 失败则退回 wav
+        return out_path
+    # ffmpeg 失败/缺失则退回 wav
     fallback = out_path.replace(".mp3", ".wav")
     with open(fallback, "wb") as f:
         f.write(merged)
-    print(f"⚠️ mp3 转换失败，已输出 wav: {fallback}", flush=True)
-    return True
+    print(f"✅ 语音合成完成(wav): {fallback}（{os.path.getsize(fallback)/1024:.1f} KB）", flush=True)
+    return fallback
 
 
 # ---------------------------------------------------------------- 邮件发送
@@ -372,7 +378,9 @@ def send_voice_email(mp3_path, subject=None):
 
     with open(mp3_path, "rb") as f:
         audio_data = f.read()
-    part = MIMEApplication(audio_data, _subtype="mp3")
+    ext = os.path.splitext(mp3_path)[1].lower().lstrip(".")
+    subtype = "wav" if ext == "wav" else "mp3"
+    part = MIMEApplication(audio_data, _subtype=subtype)
     part.add_header("Content-Disposition", "attachment", filename=os.path.basename(mp3_path))
     msg.attach(part)
 
@@ -438,13 +446,14 @@ def main():
     speech_text = "。".join(speech_parts)
     out_path = args.out or os.path.join(REPORTS_DIR, f"voice_report_{date_str}.mp3")
 
-    if not synth_to_mp3(api_key, args.voice, speech_text, args.style, out_path):
+    final_path = synth_to_mp3(api_key, args.voice, speech_text, args.style, out_path)
+    if not final_path:
         sys.exit(1)
 
     print(f"口播稿预览：{speech_text[:200]}...", flush=True)
 
     if not args.no_email:
-        send_voice_email(out_path)
+        send_voice_email(final_path)
 
 
 if __name__ == "__main__":
