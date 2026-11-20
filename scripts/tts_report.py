@@ -99,6 +99,8 @@ def clean_inline(s):
     # 涨跌幅正负号转中文
     s = re.sub(r"涨跌幅\s*\+\s*(\d)", r"上涨 \1", s)
     s = re.sub(r"涨跌幅\s*-\s*(\d)", r"下跌 \1", s)
+    # 无符号正数（正号省略）→ 上涨
+    s = re.sub(r"涨跌幅\s*(\d)", r"上涨 \1", s)
     # 去掉引号（TTS 可能读出引号）
     s = s.replace("“", "").replace("”", "").replace("\"", "").replace("'", "")
     s = re.sub(r"\s*，\s*", "，", s)
