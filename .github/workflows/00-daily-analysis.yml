@@ -581,6 +581,24 @@ jobs:
           else
             python main.py $FORCE_RUN_ARG
           fi
+
+      - name: 生成语音播报（MiMo 预置音色）
+        if: always()
+        env:
+          MIMO_API_KEY: ${{ secrets.MIMO_API_KEY }}
+          EMAIL_SENDER: ${{ vars.EMAIL_SENDER || secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVERS: ${{ vars.EMAIL_RECEIVERS || secrets.EMAIL_RECEIVERS }}
+          EMAIL_SENDER_NAME: ${{ vars.EMAIL_SENDER_NAME || secrets.EMAIL_SENDER_NAME || 'daily_stock_analysis股票分析助手' }}
+        run: |
+          # 语音播报：读 reports/*.md 提取浓缩口播，用 MiMo 预置音色合成 mp3 并作为附件发邮件。
+          # 脚本内部自行判断是否有报告文件，无报告则安全退出，不影响主流程。
+          # 若 MiMo key 未配置，则跳过（不阻断日报邮件）。
+          if [ -n "$MIMO_API_KEY" ]; then
+            python scripts/tts_report.py
+          else
+            echo "⚠️ 未配置 MIMO_API_KEY，跳过语音播报"
+          fi
       
       - name: 上传分析报告
         uses: actions/upload-artifact@v6
