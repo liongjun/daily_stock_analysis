@@ -37,7 +37,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  gate:
+    # 去重锁：当天（北京时间）已有一条成功的 run 就跳过主流程，避免重复发邮件。
+    # 背景：GitHub schedule 会积压补跑，一天可能触发多次，靠它挡住重复。
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TODAY=$(TZ=Asia/Shanghai date +%F)
+          COUNT=$(gh run list --repo ${{ github.repository }} --workflow 00-daily-analysis.yml --limit 30 --json conclusion,createdAt \
+            --jq "[.[] | select(.conclusion==\"success\") | select((.createdAt | fromdateiso8601 + 8*3600 | strftime(\"%Y-%m-%d\")) == \"$TODAY\")] | length")
+          if [ "$COUNT" -gt 0 ]; then
+            echo "当天($TODAY)已有成功 run，跳过主流程"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
   analyze:
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     env:
       # GitHub Actions runner 默认使用 UTC。报告中的「生成时间」「报告日期」
